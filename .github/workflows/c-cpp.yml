@@ -1,0 +1,47 @@
+name: Build Mandibule Root Binary
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        abi: [arm64-v8a, armeabi-v7a, x86, x86_64]
+    
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26d
+          local-cache: true
+
+      - name: Compile with ndk-build
+        run: |
+          ndk-build \
+            NDK_PROJECT_PATH=. \
+            APP_BUILD_SCRIPT=Android.mk \
+            APP_PLATFORM=android-21 \
+            APP_ABI=${{ matrix.abi }} \
+            LOCAL_LDFLAGS="-Wl,-z,max-page-size=16384" \
+            -j$(nproc)
+
+      - name: Prepare Artifacts
+        run: |
+          mkdir -p output/${{ matrix.abi }}
+          cp libs/${{ matrix.abi }}/mandibule output/${{ matrix.abi }}/
+          # Опционально: llvm-strip для уменьшения размера
+          $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip output/${{ matrix.abi }}/mandibule
+
+      - name: Upload Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: mandibule-${{ matrix.abi }}
+          path: output/${{ matrix.abi }}/mandibulndk-buildk-build
