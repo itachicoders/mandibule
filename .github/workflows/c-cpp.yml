@@ -1,4 +1,5 @@
 name: Build Mandibule Root Binary
+
 on:
   workflow_dispatch:
   push:
@@ -6,7 +7,7 @@ on:
   pull_request:
 
 jobs:
-  build-android-arm64:
+  build:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -22,25 +23,40 @@ jobs:
           ndk-version: r26d
           local-cache: true
 
+      - name: Create NDK Build Files
+        run: |
+          mkdir -p jni
+          # Создаем Android.mk с автоматическим поиском всех.c файлов
+          cat <<EOF > jni/Android.mk
+          LOCAL_PATH := \$(call my-dir)
+          include \$(CLEAR_VARS)
+          LOCAL_MODULE := mandibule
+          LOCAL_SRC_FILES := \$(wildcard../*.c) \$(wildcard../src/*.c)
+          LOCAL_CFLAGS += -O3 -fPIE
+          LOCAL_LDFLAGS += -fPIE -pie -Wl,-z,max-page-size=16384
+          include \$(BUILD_EXECUTABLE)
+          EOF
+
+          # Создаем Application.mk для настройки ABI
+          cat <<EOF > jni/Application.mk
+          APP_ABI := ${{ matrix.abi }}
+          APP_PLATFORM := android-21
+          APP_STL := c++_static
+          EOF
+
       - name: Compile with ndk-build
         run: |
-          ndk-build \
-            NDK_PROJECT_PATH=. \
-            APP_BUILD_SCRIPT=Android.mk \
-            APP_PLATFORM=android-21 \
-            APP_ABI=${{ matrix.abi }} \
-            LOCAL_LDFLAGS="-Wl,-z,max-page-size=16384" \
-            -j$(nproc)
+          ndk-build NDK_PROJECT_PATH=. -j$(nproc)
 
       - name: Prepare Artifacts
         run: |
-          mkdir -p output/${{ matrix.abi }}
-          cp libs/${{ matrix.abi }}/mandibule output/${{ matrix.abi }}/
-          # Опционально: llvm-strip для уменьшения размера
-          $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip output/${{ matrix.abi }}/mandibule
+          mkdir -p output
+          cp libs/${{ matrix.abi }}/mandibule output/mandibule-${{ matrix.abi }}
+          # Очистка отладочных символов
+          $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip output/mandibule-${{ matrix.abi }}
 
       - name: Upload Binary
         uses: actions/upload-artifact@v4
         with:
           name: mandibule-${{ matrix.abi }}
-          path: output/${{ matrix.abi }}/mandibulndk-buildk-build
+          path: output/mandibule-${{ matrix.abi }}
